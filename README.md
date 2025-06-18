@@ -4,7 +4,7 @@ Command-line tools to simplify WordPress site management, built by [Big Red SEO]
 
 ---
 
-## 📦 Script: `backup.sh`
+## 📦 Script: `backup_fils_and_database.sh`
 
 A lightweight shell script that creates a `.zip` archive of a WordPress site — including all files (excluding media uploads) and a full MySQL database dump.
 
@@ -29,23 +29,23 @@ This script assumes:
 
 ```
 /home/youruser/
-├── backup.sh         ← Place the script here
-└── public_html/      ← WordPress site
+├── backup_fils_and_database.sh   ← Place the script here
+└── public_html/                  ← WordPress site
 ```
 
 ---
 
 ### 🚀 How to Use
 
-1. Upload `backup.sh` to your server **one level above** `public_html`
+1. Upload `backup_fils_and_database.sh` to your server **one level above** `public_html`
 2. SSH into the server
 3. Make the script executable:
    ```bash
-   chmod +x backup.sh
+   chmod +x backup_fils_and_database.sh
    ```
 4. Run the script:
    ```bash
-   ./backup.sh
+   ./backup_fils_and_database.sh
    ```
 5. When prompted, enter a shortname for the domain (e.g., `bigredseo`)
 
