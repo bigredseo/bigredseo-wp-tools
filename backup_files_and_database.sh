@@ -33,7 +33,6 @@ EXCLUDE_DIRS=(
   "./public_html/wp-content/cache" #SiteGround Cache
 )
 
-
 # ---------------------------
 # 3. Extract DB Credentials
 # ---------------------------
@@ -55,7 +54,14 @@ mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" > "$DB_DUMP_FI
 # ---------------------------
 
 echo "🗜 Creating ZIP archive: $BACKUP_FILE"
-zip -r "$BACKUP_FILE" ./public_html "$DB_DUMP_FILE" -x "$EXCLUDE_DIR/*"
+
+# Build exclude parameters
+EXCLUDES=()
+for DIR in "${EXCLUDE_DIRS[@]}"; do
+  EXCLUDES+=("-x" "${DIR}/*")
+done
+
+zip -r "$BACKUP_FILE" ./public_html "$DB_DUMP_FILE" "${EXCLUDES[@]}"
 
 # Cleanup SQL dump
 rm "$DB_DUMP_FILE"
@@ -65,3 +71,4 @@ rm "$DB_DUMP_FILE"
 # ---------------------------
 
 echo "✅ Backup created successfully: $BACKUP_FILE"
+
