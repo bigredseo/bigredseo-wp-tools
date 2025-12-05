@@ -25,9 +25,14 @@ fi
 DATE=$(date +%Y%m%d)
 BACKUP_FILE="${SHORTNAME}_fd_backup_${DATE}.zip"
 DB_DUMP_FILE="db_backup_${DATE}.sql"
-
-EXCLUDE_DIR="./public_html/wp-content/uploads"
 WP_CONFIG="./public_html/wp-config.php"
+
+# Exclusion paths (array)
+EXCLUDE_DIRS=(
+  "./public_html/wp-content/uploads"
+  "./public_html/wp-content/cache" #SiteGround Cache
+)
+
 
 # ---------------------------
 # 3. Extract DB Credentials
