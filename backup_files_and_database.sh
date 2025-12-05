@@ -5,7 +5,7 @@
 # Description: Creates a zip backup of the WordPress site,
 #              excluding wp-content/uploads/, and includes a database dump.
 # Author: www.BigRedSEO.com
-# Date: 2025-06-18
+# Date: 20251205
 # ---------------------------------------------
 
 # ---------------------------
