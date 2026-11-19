@@ -2,16 +2,16 @@
 
 # ---------------------------------------------------------
 # Script Name: brs-site-backup.sh
-# Version: 1.1.0
+# Version: 1.2.0
 # Description: Creates a ZIP backup containing:
 #              1. The complete WordPress wp-content directory
 #              2. A WordPress database dump
-#              3. The optional protected directory, if present
+#              3. Any configured additional directories
 #
-#              Cache directories, backup archives, and
-#              generated backup-plugin files are excluded
-#              from wp-content. The protected directory is
-#              included in full, including ZIP and PDF files.
+#              Cache directories, generated backup archives,
+#              and backup-plugin output are excluded from
+#              wp-content. Additional directories are included
+#              in full, including ZIP and PDF files.
 #
 # Author: www.BigRedSEO.com
 # Date: 20261119
@@ -42,9 +42,22 @@ fi
 
 DATE=$(date +%Y%m%d)
 
-# Paths are relative to the directory where the script is run.
+# All paths are relative to the directory where the script is run.
+# Run this script from the common parent of these directories.
 SITE_ROOT="public_html"
-PROTECTED_ROOT="protected"
+
+# Optional additional directories to include in the backup.
+# Leave empty for a normal WordPress backup.
+#
+# Examples:
+#   No additional directories:  ADDITIONAL_DIRS=()
+#   One directory:              ADDITIONAL_DIRS=("protected")
+#   Multiple directories:       ADDITIONAL_DIRS=("protected" "client_documents")
+#
+# Each directory must be inside the script's working directory.
+# Additional directories are included in full.
+ADDITIONAL_DIRS=()
+
 WP_CONFIG="${SITE_ROOT}/wp-config.php"
 
 BACKUP_FILE="${SHORTNAME}_wpcontent_db_backup_${DATE}.zip"
@@ -53,7 +66,7 @@ BACKUP_PATH="$(pwd)/${BACKUP_FILE}"
 DB_DUMP_FILE="db_backup_${DATE}.sql"
 DB_DUMP_PATH="${SITE_ROOT}/${DB_DUMP_FILE}"
 
-# Exclusions are relative to wp-content's site root. Section 7
+# Exclusions are relative to the site's root directory. Section 7
 # automatically prepends SITE_ROOT for the ZIP command.
 EXCLUDE_PATHS=(
     # General WordPress cache directories
@@ -111,58 +124,72 @@ if [[ ! -f "$WP_CONFIG" ]]; then
     exit 1
 fi
 
-if ! command -v mysqldump >/dev/null 2>&1; then
-    echo "mysqldump is not available."
-    exit 1
-fi
-
-if ! command -v zip >/dev/null 2>&1; then
-    echo "zip is not available."
-    exit 1
-fi
-
-if ! command -v unzip >/dev/null 2>&1; then
-    echo "unzip is not available."
-    exit 1
-fi
+for REQUIRED_COMMAND in mysqldump zip unzip; do
+    if ! command -v "$REQUIRED_COMMAND" >/dev/null 2>&1; then
+        echo "Required command is not available: $REQUIRED_COMMAND"
+        exit 1
+    fi
+done
 
 # Avoid overwriting or deleting a pre-existing SQL dump.
-if [[ -e "$DB_DUMP_PATH" ]]; then
+if [[ -e "$DB_DUMP_PATH" || -L "$DB_DUMP_PATH" ]]; then
     echo "Temporary database dump path already exists: $DB_DUMP_PATH"
     echo "Remove or rename it manually before retrying."
     exit 1
 fi
 
+# Validate configured additional directories before starting the dump.
+# Only relative paths within the working directory are supported.
+ZIP_ADDITIONAL_DIRS=()
+for EXTRA_DIR in "${ADDITIONAL_DIRS[@]}"; do
+    [[ -z "$EXTRA_DIR" ]] && continue
+
+    if [[ "$EXTRA_DIR" = /* || "$EXTRA_DIR" == *".."* || "$EXTRA_DIR" == "." ]]; then
+        echo "Invalid additional directory path: $EXTRA_DIR"
+        echo "Use a relative path under the current working directory, without '..'."
+        exit 1
+    fi
+
+    # Do not follow symlinked directory roots outside the backup directory.
+    if [[ -L "$EXTRA_DIR" ]]; then
+        echo "Additional directory cannot be a symbolic link: $EXTRA_DIR"
+        exit 1
+    fi
+
+    if [[ ! -d "$EXTRA_DIR" ]]; then
+        echo "Configured additional directory not found: $EXTRA_DIR"
+        exit 1
+    fi
+
+    ZIP_ADDITIONAL_DIRS+=("$EXTRA_DIR")
+done
+
 # ---------------------------
 # 4. Cleanup on Exit
 # ---------------------------
 
+DUMP_CREATED=false
 cleanup() {
-    if [[ -f "$DB_DUMP_PATH" ]]; then
+    if [[ "$DUMP_CREATED" == true && -f "$DB_DUMP_PATH" ]]; then
         rm -f -- "$DB_DUMP_PATH"
     fi
 }
-
 trap cleanup EXIT
 
 # ---------------------------
 # 5. Extract DB Credentials
 # ---------------------------
 
-DB_NAME=$(grep -E "define\([[:space:]]*['\"]DB_NAME['\"]" "$WP_CONFIG" |
-    head -n 1 |
+DB_NAME=$(grep -m 1 -E "define\([[:space:]]*['\"]DB_NAME['\"]" "$WP_CONFIG" | \
     sed -E "s/.*DB_NAME['\"][[:space:]]*,[[:space:]]*['\"]([^'\"]+)['\"].*/\1/")
 
-DB_USER=$(grep -E "define\([[:space:]]*['\"]DB_USER['\"]" "$WP_CONFIG" |
-    head -n 1 |
+DB_USER=$(grep -m 1 -E "define\([[:space:]]*['\"]DB_USER['\"]" "$WP_CONFIG" | \
     sed -E "s/.*DB_USER['\"][[:space:]]*,[[:space:]]*['\"]([^'\"]+)['\"].*/\1/")
 
-DB_PASSWORD=$(grep -E "define\([[:space:]]*['\"]DB_PASSWORD['\"]" "$WP_CONFIG" |
-    head -n 1 |
+DB_PASSWORD=$(grep -m 1 -E "define\([[:space:]]*['\"]DB_PASSWORD['\"]" "$WP_CONFIG" | \
     sed -E "s/.*DB_PASSWORD['\"][[:space:]]*,[[:space:]]*['\"]([^'\"]*)['\"].*/\1/")
 
-DB_HOST=$(grep -E "define\([[:space:]]*['\"]DB_HOST['\"]" "$WP_CONFIG" |
-    head -n 1 |
+DB_HOST=$(grep -m 1 -E "define\([[:space:]]*['\"]DB_HOST['\"]" "$WP_CONFIG" | \
     sed -E "s/.*DB_HOST['\"][[:space:]]*,[[:space:]]*['\"]([^'\"]+)['\"].*/\1/")
 
 if [[ -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_HOST" ]]; then
@@ -176,9 +203,10 @@ fi
 
 echo "Dumping database: $DB_NAME"
 
-# Restrict read access to the temporary SQL dump.
+# Restrict read access to the temporary SQL dump and resulting ZIP.
 umask 077
 
+DUMP_CREATED=true
 mysqldump \
     --host="$DB_HOST" \
     --user="$DB_USER" \
@@ -201,7 +229,6 @@ echo "Database dump created: $DB_DUMP_FILE"
 # ---------------------------
 
 ZIP_EXCLUDES=()
-
 for EXCLUDE_PATH in "${EXCLUDE_PATHS[@]}"; do
     ZIP_EXCLUDES+=("-x" "${SITE_ROOT}/${EXCLUDE_PATH}")
 done
@@ -217,17 +244,14 @@ ZIP_INCLUDE=(
     "${SITE_ROOT}/${DB_DUMP_FILE}"
 )
 
-# Include the optional protected folder without excluding its ZIPs/PDFs.
-if [[ -d "$PROTECTED_ROOT" ]]; then
-    echo "Including protected directory: $PROTECTED_ROOT"
-    ZIP_INCLUDE+=("$PROTECTED_ROOT")
-fi
+for EXTRA_DIR in "${ZIP_ADDITIONAL_DIRS[@]}"; do
+    echo "Including additional directory: $EXTRA_DIR"
+    ZIP_INCLUDE+=("$EXTRA_DIR")
+done
 
-# Remove an existing backup with the same filename so ZIP does
-# not update an older archive and leave stale files inside it.
+# Remove an existing archive so ZIP never retains stale files.
 rm -f -- "$BACKUP_PATH"
 
-# Run from the common parent of SITE_ROOT and PROTECTED_ROOT.
 zip -r "$BACKUP_PATH" \
     "${ZIP_INCLUDE[@]}" \
     "${ZIP_EXCLUDES[@]}"
@@ -258,7 +282,6 @@ echo "$BACKUP_PATH"
 echo "Backup size: $BACKUP_SIZE"
 echo
 echo "ZIP contents:"
-
 for INCLUDED_PATH in "${ZIP_INCLUDE[@]}"; do
     echo "  ${INCLUDED_PATH}"
 done
