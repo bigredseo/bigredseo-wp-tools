@@ -2,7 +2,7 @@
 
 # ---------------------------------------------------------
 # Script Name: brs-site-backup.sh
-# Version: 1.3.1
+# Version: 1.3.2
 # Description: Creates a ZIP backup containing:
 #              1. The complete WordPress wp-content directory
 #              2. A WordPress database dump
@@ -92,7 +92,14 @@ DATE=$(date +%Y%m%d)
 
 WP_CONFIG="${SITE_ROOT}/wp-config.php"
 
-BACKUP_FILE="${SHORTNAME}_wpcontent_db_backup_${DATE}.zip"
+# Set the backup filename based on whether uploads are included.
+if [[ "$INCLUDE_UPLOADS" == true ]]; then
+    UPLOADS_LABEL="with_uploads"
+else
+    UPLOADS_LABEL="no_uploads"
+fi
+
+BACKUP_FILE="${SHORTNAME}_wpcontent_db_${UPLOADS_LABEL}_${DATE}.zip"
 BACKUP_PATH="$(pwd)/${BACKUP_FILE}"
 
 DB_DUMP_FILE="db_backup_${DATE}.sql"
