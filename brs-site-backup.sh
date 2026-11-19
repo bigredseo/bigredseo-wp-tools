@@ -2,11 +2,14 @@
 
 # ---------------------------------------------------------
 # Script Name: brs-site-backup.sh
-# Version: 1.2.0
+# Version: 1.3.0
 # Description: Creates a ZIP backup containing:
 #              1. The complete WordPress wp-content directory
 #              2. A WordPress database dump
 #              3. Any configured additional directories
+#
+#              The user can choose whether to include
+#              WordPress media uploads (wp-content/uploads).
 #
 #              Cache directories, generated backup archives,
 #              and backup-plugin output are excluded from
@@ -37,7 +40,30 @@ if [[ ! "$SHORTNAME" =~ ^[A-Za-z0-9_-]+$ ]]; then
 fi
 
 # ---------------------------
-# 2. Define Variables
+# 2. Ask About Media Uploads
+# ---------------------------
+
+# Default to including uploads to preserve the standard backup.
+while true; do
+    read -r -p "Include WordPress media uploads (wp-content/uploads)? [Y/n]: " UPLOADS_ANSWER
+
+    case "${UPLOADS_ANSWER,,}" in
+        ""|y|yes)
+            INCLUDE_UPLOADS=true
+            break
+            ;;
+        n|no)
+            INCLUDE_UPLOADS=false
+            break
+            ;;
+        *)
+            echo "Please enter Y or N."
+            ;;
+    esac
+done
+
+# ---------------------------
+# 3. Define Variables
 # ---------------------------
 
 DATE=$(date +%Y%m%d)
@@ -66,7 +92,7 @@ BACKUP_PATH="$(pwd)/${BACKUP_FILE}"
 DB_DUMP_FILE="db_backup_${DATE}.sql"
 DB_DUMP_PATH="${SITE_ROOT}/${DB_DUMP_FILE}"
 
-# Exclusions are relative to the site's root directory. Section 7
+# Exclusions are relative to the site's root directory. Section 8
 # automatically prepends SITE_ROOT for the ZIP command.
 EXCLUDE_PATHS=(
     # General WordPress cache directories
@@ -106,7 +132,7 @@ EXCLUDE_PATHS=(
 )
 
 # ---------------------------
-# 3. Validate Required Files
+# 4. Validate Required Files
 # ---------------------------
 
 if [[ ! -d "$SITE_ROOT" ]]; then
@@ -165,7 +191,7 @@ for EXTRA_DIR in "${ADDITIONAL_DIRS[@]}"; do
 done
 
 # ---------------------------
-# 4. Cleanup on Exit
+# 5. Cleanup on Exit
 # ---------------------------
 
 DUMP_CREATED=false
@@ -177,7 +203,7 @@ cleanup() {
 trap cleanup EXIT
 
 # ---------------------------
-# 5. Extract DB Credentials
+# 6. Extract DB Credentials
 # ---------------------------
 
 DB_NAME=$(grep -m 1 -E "define\([[:space:]]*['\"]DB_NAME['\"]" "$WP_CONFIG" | \
@@ -198,7 +224,7 @@ if [[ -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_HOST" ]]; then
 fi
 
 # ---------------------------
-# 6. Dump the Database
+# 7. Dump the Database
 # ---------------------------
 
 echo "Dumping database: $DB_NAME"
@@ -225,7 +251,7 @@ fi
 echo "Database dump created: $DB_DUMP_FILE"
 
 # ---------------------------
-# 7. Build ZIP Exclusions
+# 8. Build ZIP Exclusions
 # ---------------------------
 
 ZIP_EXCLUDES=()
@@ -233,8 +259,17 @@ for EXCLUDE_PATH in "${EXCLUDE_PATHS[@]}"; do
     ZIP_EXCLUDES+=("-x" "${SITE_ROOT}/${EXCLUDE_PATH}")
 done
 
+# Exclude all media uploads when the user selects No.
+# This exclusion only applies to the normal WordPress uploads directory.
+if [[ "$INCLUDE_UPLOADS" == false ]]; then
+    ZIP_EXCLUDES+=("-x" "${SITE_ROOT}/wp-content/uploads/*")
+    echo "WordPress media uploads will be excluded."
+else
+    echo "WordPress media uploads will be included."
+fi
+
 # ---------------------------
-# 8. Create the ZIP Archive
+# 9. Create the ZIP Archive
 # ---------------------------
 
 echo "Creating ZIP archive: $BACKUP_FILE"
@@ -257,7 +292,7 @@ zip -r "$BACKUP_PATH" \
     "${ZIP_EXCLUDES[@]}"
 
 # ---------------------------
-# 9. Verify the ZIP
+# 10. Verify the ZIP
 # ---------------------------
 
 if [[ ! -s "$BACKUP_PATH" ]]; then
@@ -271,7 +306,7 @@ if ! unzip -t "$BACKUP_PATH" >/dev/null; then
 fi
 
 # ---------------------------
-# 10. Done
+# 11. Done
 # ---------------------------
 
 BACKUP_SIZE=$(du -h "$BACKUP_PATH" | cut -f 1)
