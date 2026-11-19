@@ -2,7 +2,7 @@
 
 # ---------------------------------------------------------
 # Script Name: brs-site-backup.sh
-# Version: 1.3.0
+# Version: 1.3.1
 # Description: Creates a ZIP backup containing:
 #              1. The complete WordPress wp-content directory
 #              2. A WordPress database dump
@@ -23,7 +23,29 @@
 set -Eeuo pipefail
 
 # ---------------------------
-# 1. Ask for Filename Prefix
+# 1. USER CONFIGURATION
+# ---------------------------
+# Edit only these settings for each client.
+# For a standard WordPress site, leave the defaults unchanged.
+# Run the script from the parent directory of these folders.
+
+# WordPress installation directory (relative to where you run this script).
+SITE_ROOT="public_html"
+
+# Optional additional directories to include in the backup.
+# Leave empty for a normal WordPress backup.
+#
+# Examples:
+#   No additional directories:  ADDITIONAL_DIRS=()
+#   One directory:              ADDITIONAL_DIRS=("protected")
+#   Multiple directories:       ADDITIONAL_DIRS=("protected" "client_documents")
+#
+# Each directory must be inside the script's working directory.
+# Additional directories are included in full.
+ADDITIONAL_DIRS=()
+
+# ---------------------------
+# 2. Ask for Filename Prefix
 # ---------------------------
 
 read -r -p "Enter the domain shortname (e.g., bigredseo): " SHORTNAME
@@ -40,7 +62,7 @@ if [[ ! "$SHORTNAME" =~ ^[A-Za-z0-9_-]+$ ]]; then
 fi
 
 # ---------------------------
-# 2. Ask About Media Uploads
+# 3. Ask About Media Uploads
 # ---------------------------
 
 # Default to including uploads to preserve the standard backup.
@@ -63,26 +85,10 @@ while true; do
 done
 
 # ---------------------------
-# 3. Define Variables
+# 4. Define Internal Variables
 # ---------------------------
 
 DATE=$(date +%Y%m%d)
-
-# All paths are relative to the directory where the script is run.
-# Run this script from the common parent of these directories.
-SITE_ROOT="public_html"
-
-# Optional additional directories to include in the backup.
-# Leave empty for a normal WordPress backup.
-#
-# Examples:
-#   No additional directories:  ADDITIONAL_DIRS=()
-#   One directory:              ADDITIONAL_DIRS=("protected")
-#   Multiple directories:       ADDITIONAL_DIRS=("protected" "client_documents")
-#
-# Each directory must be inside the script's working directory.
-# Additional directories are included in full.
-ADDITIONAL_DIRS=()
 
 WP_CONFIG="${SITE_ROOT}/wp-config.php"
 
@@ -92,7 +98,7 @@ BACKUP_PATH="$(pwd)/${BACKUP_FILE}"
 DB_DUMP_FILE="db_backup_${DATE}.sql"
 DB_DUMP_PATH="${SITE_ROOT}/${DB_DUMP_FILE}"
 
-# Exclusions are relative to the site's root directory. Section 8
+# Exclusions are relative to the site's root directory. Section 9
 # automatically prepends SITE_ROOT for the ZIP command.
 EXCLUDE_PATHS=(
     # General WordPress cache directories
@@ -132,7 +138,7 @@ EXCLUDE_PATHS=(
 )
 
 # ---------------------------
-# 4. Validate Required Files
+# 5. Validate Required Files
 # ---------------------------
 
 if [[ ! -d "$SITE_ROOT" ]]; then
@@ -191,7 +197,7 @@ for EXTRA_DIR in "${ADDITIONAL_DIRS[@]}"; do
 done
 
 # ---------------------------
-# 5. Cleanup on Exit
+# 6. Cleanup on Exit
 # ---------------------------
 
 DUMP_CREATED=false
@@ -203,7 +209,7 @@ cleanup() {
 trap cleanup EXIT
 
 # ---------------------------
-# 6. Extract DB Credentials
+# 7. Extract DB Credentials
 # ---------------------------
 
 DB_NAME=$(grep -m 1 -E "define\([[:space:]]*['\"]DB_NAME['\"]" "$WP_CONFIG" | \
@@ -224,7 +230,7 @@ if [[ -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_HOST" ]]; then
 fi
 
 # ---------------------------
-# 7. Dump the Database
+# 8. Dump the Database
 # ---------------------------
 
 echo "Dumping database: $DB_NAME"
@@ -251,7 +257,7 @@ fi
 echo "Database dump created: $DB_DUMP_FILE"
 
 # ---------------------------
-# 8. Build ZIP Exclusions
+# 9. Build ZIP Exclusions
 # ---------------------------
 
 ZIP_EXCLUDES=()
@@ -269,7 +275,7 @@ else
 fi
 
 # ---------------------------
-# 9. Create the ZIP Archive
+# 10. Create the ZIP Archive
 # ---------------------------
 
 echo "Creating ZIP archive: $BACKUP_FILE"
@@ -292,7 +298,7 @@ zip -r "$BACKUP_PATH" \
     "${ZIP_EXCLUDES[@]}"
 
 # ---------------------------
-# 10. Verify the ZIP
+# 11. Verify the ZIP
 # ---------------------------
 
 if [[ ! -s "$BACKUP_PATH" ]]; then
@@ -306,7 +312,7 @@ if ! unzip -t "$BACKUP_PATH" >/dev/null; then
 fi
 
 # ---------------------------
-# 11. Done
+# 12. Done
 # ---------------------------
 
 BACKUP_SIZE=$(du -h "$BACKUP_PATH" | cut -f 1)
