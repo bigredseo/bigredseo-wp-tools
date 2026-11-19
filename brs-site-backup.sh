@@ -1,16 +1,20 @@
 #!/bin/bash
 
 # ---------------------------------------------------------
-# Script Name: site-backup.sh
+# Script Name: brs-site-backup.sh
+# Version: 1.1.0
 # Description: Creates a ZIP backup containing:
-#              1. The complete wp-content directory
+#              1. The complete WordPress wp-content directory
 #              2. A WordPress database dump
+#              3. The optional protected directory, if present
 #
 #              Cache directories, backup archives, and
-#              generated backup-plugin files are excluded.
+#              generated backup-plugin files are excluded
+#              from wp-content. The protected directory is
+#              included in full, including ZIP and PDF files.
 #
 # Author: www.BigRedSEO.com
-# Date: 20260724
+# Date: 20261119
 # ---------------------------------------------------------
 
 set -Eeuo pipefail
@@ -26,13 +30,21 @@ if [[ -z "$SHORTNAME" ]]; then
     exit 1
 fi
 
+# Restrict the prefix to safe filename characters.
+if [[ ! "$SHORTNAME" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    echo "Shortname may contain only letters, numbers, underscores, and hyphens."
+    exit 1
+fi
+
 # ---------------------------
 # 2. Define Variables
 # ---------------------------
 
 DATE=$(date +%Y%m%d)
 
-SITE_ROOT="./public_html"
+# Paths are relative to the directory where the script is run.
+SITE_ROOT="public_html"
+PROTECTED_ROOT="protected"
 WP_CONFIG="${SITE_ROOT}/wp-config.php"
 
 BACKUP_FILE="${SHORTNAME}_wpcontent_db_backup_${DATE}.zip"
@@ -41,8 +53,8 @@ BACKUP_PATH="$(pwd)/${BACKUP_FILE}"
 DB_DUMP_FILE="db_backup_${DATE}.sql"
 DB_DUMP_PATH="${SITE_ROOT}/${DB_DUMP_FILE}"
 
-# All exclusion paths are relative to public_html because the
-# ZIP command is run from inside the public_html directory.
+# Exclusions are relative to wp-content's site root. Section 7
+# automatically prepends SITE_ROOT for the ZIP command.
 EXCLUDE_PATHS=(
     # General WordPress cache directories
     "wp-content/cache/*"
@@ -71,7 +83,7 @@ EXCLUDE_PATHS=(
     "wp-content/uploads/backupbuddy_backups/*"
     "wp-content/uploads/wp-clone/*"
 
-    # Common generated backup archive files anywhere in wp-content
+    # Generated backup archive files anywhere in wp-content
     "wp-content/*.zip"
     "wp-content/*.tar"
     "wp-content/*.tar.gz"
@@ -109,13 +121,25 @@ if ! command -v zip >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v unzip >/dev/null 2>&1; then
+    echo "unzip is not available."
+    exit 1
+fi
+
+# Avoid overwriting or deleting a pre-existing SQL dump.
+if [[ -e "$DB_DUMP_PATH" ]]; then
+    echo "Temporary database dump path already exists: $DB_DUMP_PATH"
+    echo "Remove or rename it manually before retrying."
+    exit 1
+fi
+
 # ---------------------------
 # 4. Cleanup on Exit
 # ---------------------------
 
 cleanup() {
     if [[ -f "$DB_DUMP_PATH" ]]; then
-        rm -f "$DB_DUMP_PATH"
+        rm -f -- "$DB_DUMP_PATH"
     fi
 }
 
@@ -152,6 +176,9 @@ fi
 
 echo "Dumping database: $DB_NAME"
 
+# Restrict read access to the temporary SQL dump.
+umask 077
+
 mysqldump \
     --host="$DB_HOST" \
     --user="$DB_USER" \
@@ -176,7 +203,7 @@ echo "Database dump created: $DB_DUMP_FILE"
 ZIP_EXCLUDES=()
 
 for EXCLUDE_PATH in "${EXCLUDE_PATHS[@]}"; do
-    ZIP_EXCLUDES+=("-x" "$EXCLUDE_PATH")
+    ZIP_EXCLUDES+=("-x" "${SITE_ROOT}/${EXCLUDE_PATH}")
 done
 
 # ---------------------------
@@ -185,18 +212,25 @@ done
 
 echo "Creating ZIP archive: $BACKUP_FILE"
 
+ZIP_INCLUDE=(
+    "${SITE_ROOT}/wp-content"
+    "${SITE_ROOT}/${DB_DUMP_FILE}"
+)
+
+# Include the optional protected folder without excluding its ZIPs/PDFs.
+if [[ -d "$PROTECTED_ROOT" ]]; then
+    echo "Including protected directory: $PROTECTED_ROOT"
+    ZIP_INCLUDE+=("$PROTECTED_ROOT")
+fi
+
 # Remove an existing backup with the same filename so ZIP does
 # not update an older archive and leave stale files inside it.
-rm -f "$BACKUP_PATH"
+rm -f -- "$BACKUP_PATH"
 
-(
-    cd "$SITE_ROOT"
-
-    zip -r "$BACKUP_PATH" \
-        "wp-content" \
-        "$DB_DUMP_FILE" \
-        "${ZIP_EXCLUDES[@]}"
-)
+# Run from the common parent of SITE_ROOT and PROTECTED_ROOT.
+zip -r "$BACKUP_PATH" \
+    "${ZIP_INCLUDE[@]}" \
+    "${ZIP_EXCLUDES[@]}"
 
 # ---------------------------
 # 9. Verify the ZIP
@@ -224,5 +258,7 @@ echo "$BACKUP_PATH"
 echo "Backup size: $BACKUP_SIZE"
 echo
 echo "ZIP contents:"
-echo "  ${DB_DUMP_FILE}"
-echo "  wp-content/"
+
+for INCLUDED_PATH in "${ZIP_INCLUDE[@]}"; do
+    echo "  ${INCLUDED_PATH}"
+done
